@@ -3,27 +3,27 @@ package sbtassembly
 import com.eed3si9n.jarjarabrams._
 import sbt.Def.Initialize
 import sbt.Keys._
-import sbt.Package.{ manifestFormat, JarManifest, MainClass, ManifestAttributes }
+import sbt.Package.{manifestFormat, JarManifest, MainClass, ManifestAttributes}
 import sbt.internal.util.HListFormats._
 import sbt.internal.util.HNil
 import sbt.internal.util.Types.:+:
-import sbt.io.{ DirectoryFilter => _, IO => _, Path => _, Using }
+import sbt.io.{DirectoryFilter => _, IO => _, Path => _, Using}
 import sbt.util.FileInfo.lastModified
-import sbt.util.Tracked.{ inputChanged, lastOutput }
-import sbt.util.{ FilesInfo, Level, ModifiedFileInfo }
-import sbt.{ File, Logger, _ }
+import sbt.util.Tracked.{inputChanged, lastOutput}
+import sbt.util.{FilesInfo, Level, ModifiedFileInfo}
+import sbt.{File, Logger, _}
 import sbt.Tags.Tag
 import CacheImplicits._
-import sbtassembly.AssemblyPlugin.autoImport.{ Assembly => _, _ }
+import sbtassembly.AssemblyPlugin.autoImport.{Assembly => _, _}
 import sbtassembly.PluginCompat.ClasspathUtilities
 
 import java.io._
 import java.net.URI
-import java.nio.file.attribute.{ BasicFileAttributeView, FileTime, PosixFilePermission }
-import java.nio.file.{ Path, _ }
+import java.nio.file.attribute.{BasicFileAttributeView, FileTime, PosixFilePermission}
+import java.nio.file.{Path, _}
 import java.security.MessageDigest
 import java.time.Instant
-import java.util.jar.{ Attributes => JAttributes, JarFile, Manifest => JManifest }
+import java.util.jar.{Attributes => JAttributes, JarFile, Manifest => JManifest}
 import scala.annotation.tailrec
 import scala.collection.GenSeq
 import scala.collection.JavaConverters._
@@ -80,6 +80,7 @@ object Assembly {
 
   /**
    * Represents an assembly jar entry
+   *
    * @param target the path to write in the jar
    * @param stream the byte payload
    */
@@ -90,8 +91,8 @@ object Assembly {
   /**
    * Encapsulates the result of applying a merge strategy
    *
-   * @param entries the resulting [[JarEntry]]s
-   * @param origins the original [[Dependency]]s that were merged
+   * @param entries       the resulting [[JarEntry]]s
+   * @param origins       the original [[Dependency]]s that were merged
    * @param mergeStrategy the [[MergeStrategy]] applied
    */
   case class MergedEntry(entries: Vector[JarEntry], origins: Vector[Dependency], mergeStrategy: MergeStrategy) {
@@ -143,14 +144,16 @@ object Assembly {
   /**
    * Represents an internal/project dependency
    *
-   * @param name the sbt project name
+   * @param name   the sbt project name
    * @param source the original source path, before applying assembly processing (shading, merging, etc)
    * @param target the target path to be written to the assembly jar, after applying assembly processing (shading, merging, etc)
    * @param stream a lazy payload of bytes that represents the actual content to be written
    */
   case class Project(name: String, source: String, target: String, stream: LazyInputStream) extends Dependency {
     override def isProjectDependency = true
+
     override def module: Option[ModuleCoordinate] = Option.empty
+
     override def toString = s"Project name = $name, ${renamedTargetInfo(source, target)}"
   }
 
@@ -158,14 +161,16 @@ object Assembly {
    * Represents an entry of an external/library dependency jar
    *
    * @param moduleCoord the library's organization, name and version (i.e. Maven GAV)
-   * @param source the original source path in the jar, before applying assembly processing (shading, merging, etc)
-   * @param target the target path to be written to the assembly jar, after applying assembly processing (shading, merging, etc)
-   * @param stream a lazy payload of bytes that represents the actual content to be written
+   * @param source      the original source path in the jar, before applying assembly processing (shading, merging, etc)
+   * @param target      the target path to be written to the assembly jar, after applying assembly processing (shading, merging, etc)
+   * @param stream      a lazy payload of bytes that represents the actual content to be written
    */
   case class Library(moduleCoord: ModuleCoordinate, source: String, target: String, stream: LazyInputStream)
-      extends Dependency {
+    extends Dependency {
     override def isProjectDependency = false
+
     override def module: Option[ModuleCoordinate] = Option(moduleCoord)
+
     override def toString = {
       val jarOrg = if (moduleCoord.organization.nonEmpty) s" jar org = ${moduleCoord.organization}," else ""
       s"Jar name = ${moduleCoord.jarName},$jarOrg entry ${renamedTargetInfo(source, target)}"
@@ -174,9 +179,10 @@ object Assembly {
 
   /**
    * Represents an external/library JAR (i.e. Maven GAV)
+   *
    * @param organization jar org
-   * @param name jar name
-   * @param version jar version
+   * @param name         jar name
+   * @param version      jar version
    */
   case class ModuleCoordinate(organization: String = "", name: String, version: String = "") {
     val jarName: String = s"$name${if (version.nonEmpty) "-" else ""}$version.jar"
@@ -200,28 +206,28 @@ object Assembly {
   /**
    * Builds an assembly jar
    *
-   * @param targetJarName the name of the jar to build
-   * @param output the path of the jar to build
-   * @param classpath full classpath of the project and all its external dependencies
+   * @param targetJarName        the name of the jar to build
+   * @param output               the path of the jar to build
+   * @param classpath            full classpath of the project and all its external dependencies
    * @param externalDepClasspath the external dependency classpath
-   * @param ao assembly options configured via the build
-   * @param po package options configured via the build
-   * @param cacheDir the task cache directory
-   * @param log the sbt logger
+   * @param ao                   assembly options configured via the build
+   * @param po                   package options configured via the build
+   * @param cacheDir             the task cache directory
+   * @param log                  the sbt logger
    * @return the built jar as an [[sbt.File]]
    */
   def assemble(
-      targetJarName: String,
-      output: File,
-      classpath: Classpath,
-      // even though fullClasspath includes all dependencies, externalDepClasspath is needed to figure out
-      // which exact jars are "external"  when using the packageDependency option.
-      externalDepClasspath: Classpath,
-      ao: AssemblyOption,
-      po: Seq[PackageOption],
-      cacheDir: File,
-      log: Logger
-  ): File = {
+                targetJarName: String,
+                output: File,
+                classpath: Classpath,
+                // even though fullClasspath includes all dependencies, externalDepClasspath is needed to figure out
+                // which exact jars are "external"  when using the packageDependency option.
+                externalDepClasspath: Classpath,
+                ao: AssemblyOption,
+                po: Seq[PackageOption],
+                cacheDir: File,
+                log: Logger
+              ): File = {
     def timed[A](level: Level.Value, desc: String)(f: => A): A = {
       log.log(level, desc + " start:")
       val start = Instant.now().toEpochMilli
@@ -230,6 +236,7 @@ object Assembly {
       log.log(level, s"$desc end. Took ${end - start} ms")
       res
     }
+
     val (jars, dirs) = timed(Level.Debug, "Separate classpath projects and all dependencies") {
       classpath.toVector.sortBy(_.data.getCanonicalPath).partition(c => ClasspathUtilities.isArchive(c.data))
     }
@@ -287,136 +294,133 @@ object Assembly {
           ),
         log
       )
-    val (jarFiles, jarFileEntries) = timed(Level.Debug, "Collect and shade dependency entries") {
+    val (_, jarFileEntries) = timed(Level.Debug, "Collect and shade dependency entries") {
       filteredJars.par.map { jar =>
         val module = jar.metadata
           .get(moduleID.key)
           .map(m => ModuleCoordinate(m.organization, m.name, m.revision))
           .getOrElse(ModuleCoordinate("", jar.data.name.replaceAll(".jar", ""), ""))
         val jarFile = new JarFile(jar.data)
-        jarFile -> jarFile
+        val jarFileEntriesRes = jarFile
           .entries()
           .asScala
           .filterNot(_.isDirectory)
           .toVector
           .par
           .flatMap { entry =>
-            jarShader(module)(entry.getName, () => jarFile.getInputStream(entry))
+            jarShader(module)(entry.getName, () => new ByteArrayInputStream(jarFile.getInputStream(entry).readAllBytes()))
               .map { case (shadedName, stream) =>
                 Library(module, entry.getName, shadedName, stream)
               }
           }
+        jarFile.close();
+        jarFile -> jarFileEntriesRes
       }.unzip
     }
-    try {
-      val (mappingsToRename, others) = timed(Level.Debug, "Collect renames") {
-        (classMappings ++ jarFileEntries.flatten)
-          .partition(mapping => ao.mergeStrategy(mapping.target).name == MergeStrategy.rename.name)
+    val (mappingsToRename, others) = timed(Level.Debug, "Collect renames") {
+      (classMappings ++ jarFileEntries.flatten)
+        .partition(mapping => ao.mergeStrategy(mapping.target).name == MergeStrategy.rename.name)
+    }
+    val renamedEntries = timed(Level.Debug, "Process renames") {
+      merge(mappingsToRename, path => Option(ao.mergeStrategy(path)), log)
+    }
+    // convert renames back to `Dependency`s for second-pass merge and cache-invalidation
+    val renamedDependencies = convertToDependency(renamedEntries)
+    val (jarManifest, timestamp) = createManifest(po, log)
+    // exclude renames from the second pass
+    val secondPassMergeStrategy = (path: String) => {
+      val mergeStrategy = ao.mergeStrategy(path)
+      if (mergeStrategy.name == MergeStrategy.rename.name) Option.empty
+      else Option(mergeStrategy)
+    }
+    val buildAssembly = () => {
+      val mergedEntries = timed(Level.Debug, "Merge all conflicting jar entries (including those renamed)") {
+        merge(renamedDependencies ++ others, secondPassMergeStrategy, log)
       }
-      val renamedEntries = timed(Level.Debug, "Process renames") {
-        merge(mappingsToRename, path => Option(ao.mergeStrategy(path)), log)
+      timed(Level.Debug, "Report merge results") {
+        reportMergeResults(renamedEntries, log)
+        reportMergeResults(mergedEntries, log)
       }
-      // convert renames back to `Dependency`s for second-pass merge and cache-invalidation
-      val renamedDependencies = convertToDependency(renamedEntries)
-      val (jarManifest, timestamp) = createManifest(po, log)
-      // exclude renames from the second pass
-      val secondPassMergeStrategy = (path: String) => {
-        val mergeStrategy = ao.mergeStrategy(path)
-        if (mergeStrategy.name == MergeStrategy.rename.name) Option.empty
-        else Option(mergeStrategy)
+      timed(Level.Debug, "Finding remaining conflicts that were not merged") {
+        reportConflictsMissedByTheMerge(mergedEntries, log)
       }
-      val buildAssembly = () => {
-        val mergedEntries = timed(Level.Debug, "Merge all conflicting jar entries (including those renamed)") {
-          merge(renamedDependencies ++ others, secondPassMergeStrategy, log)
-        }
-        timed(Level.Debug, "Report merge results") {
-          reportMergeResults(renamedEntries, log)
-          reportMergeResults(mergedEntries, log)
-        }
-        timed(Level.Debug, "Finding remaining conflicts that were not merged") {
-          reportConflictsMissedByTheMerge(mergedEntries, log)
-        }
-        val jarEntriesToWrite = timed(Level.Debug, "Sort/Parallelize merged entries") {
-          if (ao.repeatableBuild) // we need the jars in a specific order to have a consistent hash
-            mergedEntries.flatMap(_.entries).seq.sortBy(_.target)
-          else // we actually gain performance when creating the jar in parallel, but we won't have a consistent hash
-            mergedEntries.flatMap(_.entries).par
-        }
-        val localTime = timestamp
-          .map(t => t - java.util.TimeZone.getDefault.getOffset(t))
-          .getOrElse(System.currentTimeMillis())
+      val jarEntriesToWrite = timed(Level.Debug, "Sort/Parallelize merged entries") {
+        if (ao.repeatableBuild) // we need the jars in a specific order to have a consistent hash
+          mergedEntries.flatMap(_.entries).seq.sortBy(_.target)
+        else // we actually gain performance when creating the jar in parallel, but we won't have a consistent hash
+          mergedEntries.flatMap(_.entries).par
+      }
+      val localTime = timestamp
+        .map(t => t - java.util.TimeZone.getDefault.getOffset(t))
+        .getOrElse(System.currentTimeMillis())
 
-        timed(Level.Debug, "Create jar") {
-          IO.delete(output)
-          createJar(output, jarEntriesToWrite, jarManifest, localTime)
-        }
-        val fullSha1 = timed(Level.Debug, "Hash newly-built Jar") {
-          hash(output)
-        }
-        val builtAssemblyJar =
-          if (ao.appendContentHash) {
-            val sha1 = ao.maxHashLength.fold(fullSha1)(length => fullSha1.take(length))
-            val newName = output.getName.replaceAll("\\.[^.]*$", "") + "-" + sha1 + ".jar"
-            val outputWithHash = new File(output.getParentFile, newName)
-            IO.delete(outputWithHash)
-            Files.move(output.toPath, outputWithHash.toPath, StandardCopyOption.REPLACE_EXISTING)
-            outputWithHash
-          } else output
-        ao.prependShellScript
-          .foreach { shellScript =>
-            timed(Level.Info, "Prepend shell script") {
-              val tmp = cacheDir / "assemblyExec.tmp"
-              if (tmp.exists) IO.delete(tmp)
-              Files.move(builtAssemblyJar.toPath, tmp.toPath)
-              IO.write(builtAssemblyJar, shellScript.map(_ + "\n").mkString, append = false)
-              Using.fileOutputStream(true)(builtAssemblyJar)(out => IO.transfer(tmp, out))
-              IO.delete(tmp)
-              if (!scala.util.Properties.isWin) {
-                val posixPermissions = Files.getPosixFilePermissions(builtAssemblyJar.toPath)
-                posixPermissions.add(PosixFilePermission.OWNER_EXECUTE)
-                posixPermissions.add(PosixFilePermission.GROUP_EXECUTE)
-                posixPermissions.add(PosixFilePermission.OTHERS_EXECUTE)
-                Files.setPosixFilePermissions(builtAssemblyJar.toPath, posixPermissions)
-              }
+      timed(Level.Debug, "Create jar") {
+        IO.delete(output)
+        createJar(output, jarEntriesToWrite, jarManifest, localTime)
+      }
+      val fullSha1 = timed(Level.Debug, "Hash newly-built Jar") {
+        hash(output)
+      }
+      val builtAssemblyJar =
+        if (ao.appendContentHash) {
+          val sha1 = ao.maxHashLength.fold(fullSha1)(length => fullSha1.take(length))
+          val newName = output.getName.replaceAll("\\.[^.]*$", "") + "-" + sha1 + ".jar"
+          val outputWithHash = new File(output.getParentFile, newName)
+          IO.delete(outputWithHash)
+          Files.move(output.toPath, outputWithHash.toPath, StandardCopyOption.REPLACE_EXISTING)
+          outputWithHash
+        } else output
+      ao.prependShellScript
+        .foreach { shellScript =>
+          timed(Level.Info, "Prepend shell script") {
+            val tmp = cacheDir / "assemblyExec.tmp"
+            if (tmp.exists) IO.delete(tmp)
+            Files.move(builtAssemblyJar.toPath, tmp.toPath)
+            IO.write(builtAssemblyJar, shellScript.map(_ + "\n").mkString, append = false)
+            Using.fileOutputStream(true)(builtAssemblyJar)(out => IO.transfer(tmp, out))
+            IO.delete(tmp)
+            if (!scala.util.Properties.isWin) {
+              val posixPermissions = Files.getPosixFilePermissions(builtAssemblyJar.toPath)
+              posixPermissions.add(PosixFilePermission.OWNER_EXECUTE)
+              posixPermissions.add(PosixFilePermission.GROUP_EXECUTE)
+              posixPermissions.add(PosixFilePermission.OTHERS_EXECUTE)
+              Files.setPosixFilePermissions(builtAssemblyJar.toPath, posixPermissions)
             }
           }
-        log.info("Built: " + builtAssemblyJar.toPath)
-        log.info("Jar hash: " + fullSha1)
-        builtAssemblyJar
-      }
-      val mergeStrategiesByPathList = timed(Level.Debug, "Collect all merge strategies for cache check") {
-        // collect all
-        (renamedDependencies ++ others)
-          .groupBy(_.target)
-          .map { case (target, _) =>
-            val mergeStrategy = secondPassMergeStrategy(target).getOrElse(MergeStrategy.deduplicate)
-            target -> (mergeStrategy.isBuiltIn -> mergeStrategy.name)
-          }
-      }
-      if (
-        ao.cacheOutput &&
+        }
+      log.info("Built: " + builtAssemblyJar.toPath)
+      log.info("Jar hash: " + fullSha1)
+      builtAssemblyJar
+    }
+    val mergeStrategiesByPathList = timed(Level.Debug, "Collect all merge strategies for cache check") {
+      // collect all
+      (renamedDependencies ++ others)
+        .groupBy(_.target)
+        .map { case (target, _) =>
+          val mergeStrategy = secondPassMergeStrategy(target).getOrElse(MergeStrategy.deduplicate)
+          target -> (mergeStrategy.isBuiltIn -> mergeStrategy.name)
+        }
+    }
+    if (
+      ao.cacheOutput &&
         !mergeStrategiesByPathList.values
           .exists { case (isBuiltIn, name) =>
             // if there is at least one custom merge strategy, we cannot predict what it does so we cannot use caching
             if (!isBuiltIn) log.warn(s"Caching disabled because of a custom merge strategy: '$name'")
             !isBuiltIn
           }
-      ) {
-        val (_, classes) = classByParentDir.unzip
-        val cacheKey = lastModified(classes.toSet ++ filteredJars.map(_.data).toSet) :+:
-          mergeStrategiesByPathList :+:
-          jarManifest :+:
-          ao.repeatableBuild :+:
-          ao.prependShellScript :+:
-          ao.maxHashLength :+:
-          ao.appendContentHash :+:
-          HNil
-        cachedAssembly(cacheKey, cacheDir, ao.scalaVersion, log)(buildAssembly)
-      } else buildAssembly()
-    } finally
-      timed(Level.Debug, "Close library jar references") {
-        jarFiles.foreach(_.close())
-      }
+    ) {
+      val (_, classes) = classByParentDir.unzip
+      val cacheKey = lastModified(classes.toSet ++ filteredJars.map(_.data).toSet) :+:
+        mergeStrategiesByPathList :+:
+        jarManifest :+:
+        ao.repeatableBuild :+:
+        ao.prependShellScript :+:
+        ao.maxHashLength :+:
+        ao.appendContentHash :+:
+        HNil
+      cachedAssembly(cacheKey, cacheDir, ao.scalaVersion, log)(buildAssembly)
+    } else buildAssembly()
   }
 
   /**
@@ -428,7 +432,7 @@ object Assembly {
   def isSystemJunkFile(fileName: String): Boolean =
     fileName.toLowerCase match {
       case ".ds_store" | "thumbs.db" => true
-      case _                         => false
+      case _ => false
     }
 
   /**
@@ -441,7 +445,7 @@ object Assembly {
     val LicenseFile = """(license|licence|notice|copying)([.]\w+)?$""".r
     fileName.toLowerCase match {
       case LicenseFile(_, ext) if ext != ".class" => true // DISLIKE
-      case _                                      => false
+      case _ => false
     }
   }
 
@@ -455,7 +459,7 @@ object Assembly {
     val ReadMe = """(readme|about)([.]\w+)?$""".r
     fileName.toLowerCase match {
       case ReadMe(_, ext) if ext != ".class" => true
-      case _                                 => false
+      case _ => false
     }
   }
 
@@ -468,23 +472,23 @@ object Assembly {
   def isConfigFile(fileName: String): Boolean =
     fileName.toLowerCase match {
       case "reference.conf" | "reference-overrides.conf" | "application.conf" | "rootdoc.txt" | "play.plugins" => true
-      case _                                                                                                   => false
+      case _ => false
     }
 
   /**
    * Returns a flag if the given file is part of the Scala library
    *
    * @param scalaLibraries the Scala library as a collection
-   * @param file the given file to check
+   * @param file           the given file to check
    * @return flag representing if the file is a Scala library
    */
   def isScalaLibraryFile(scalaLibraries: Vector[String], file: File): Boolean =
     scalaLibraries exists { x => file.getName startsWith x }
 
   private[sbtassembly] def shader(
-      shadeRules: SeqShadeRules,
-      log: Logger
-  ): (String, LazyInputStream) => Option[(String, LazyInputStream)] =
+                                   shadeRules: SeqShadeRules,
+                                   log: Logger
+                                 ): (String, LazyInputStream) => Option[(String, LazyInputStream)] =
     if (shadeRules.isEmpty)
       (name: String, inputStream: LazyInputStream) => Some(name -> inputStream)
     else {
@@ -503,13 +507,13 @@ object Assembly {
             new ByteArrayInputStream(bytes) {
               override def close(): Unit = is.close()
             }
-          )
+            )
         }
       }
     }
 
   private[sbtassembly] def cachedAssembly(inputs: CacheKey, cacheDir: File, scalaVersion: String, log: Logger)(
-      buildAssembly: () => File
+    buildAssembly: () => File
   ): File = {
     val cacheBlock = inputChanged(cacheDir / s"assembly-cacheKey-$scalaVersion") { (inputChanged, _: CacheKey) =>
       lastOutput(cacheDir / s"assembly-outputs-$scalaVersion") { (_: Unit, previousOutput: Option[File]) =>
@@ -532,11 +536,11 @@ object Assembly {
   }
 
   private[sbtassembly] def createJar(
-      output: File,
-      entries: GenSeq[JarEntry],
-      manifest: JManifest,
-      localTime: Long
-  ): Unit = {
+                                      output: File,
+                                      entries: GenSeq[JarEntry],
+                                      manifest: JManifest,
+                                      localTime: Long
+                                    ): Unit = {
     jarFileSystemResource(URI.create(s"jar:${output.toURI}")) { jarFs =>
       val manifestPath = jarFs.getPath("META-INF/MANIFEST.MF")
       Files.createDirectories(manifestPath.getParent)
@@ -576,15 +580,15 @@ object Assembly {
     var time: Option[Long] = None
     for (option <- po)
       option match {
-        case JarManifest(mergeManifest)     => Package.mergeManifests(manifest, mergeManifest)
-        case MainClass(mainClassName)       => main.put(JAttributes.Name.MAIN_CLASS, mainClassName)
-        case ManifestAttributes(attrs @ _*) => main ++= attrs
-        case _                              =>
+        case JarManifest(mergeManifest) => Package.mergeManifests(manifest, mergeManifest)
+        case MainClass(mainClassName) => main.put(JAttributes.Name.MAIN_CLASS, mainClassName)
+        case ManifestAttributes(attrs@_*) => main ++= attrs
+        case _ =>
           // use reflection for compatibility
           if (option.getClass.getName == "sbt.Package$FixedTimestamp") {
             try
               // https://github.com/sbt/sbt/blob/59130d4703e9238e/main-actions/src/main/scala/sbt/Package.scala#L50
-              time = option.asInstanceOf[{ def value: Option[Long] }].value
+              time = option.asInstanceOf[ {def value: Option[Long]}].value
             catch {
               case e: Throwable =>
                 log.debug(e.toString)
@@ -603,17 +607,17 @@ object Assembly {
         renamedEntry.entries
           .zip(renamedEntry.origins)
           .map {
-            case (entry, p @ Project(name, source, _, stream)) => p.copy(name, source, entry.target, stream)
-            case (entry, l @ Library(moduleCoord, source, _, stream)) =>
+            case (entry, p@Project(name, source, _, stream)) => p.copy(name, source, entry.target, stream)
+            case (entry, l@Library(moduleCoord, source, _, stream)) =>
               l.copy(moduleCoord, source, entry.target, stream)
           }
       }
 
   private[sbtassembly] def merge(
-      mappings: Vector[Dependency],
-      mergeStrategies: String => Option[MergeStrategy],
-      log: Logger
-  ): Vector[MergedEntry] = {
+                                  mappings: Vector[Dependency],
+                                  mergeStrategies: String => Option[MergeStrategy],
+                                  log: Logger
+                                ): Vector[MergedEntry] = {
     val (successfullyMerged, failures) = mappings
       .groupBy(_.target)
       .par
